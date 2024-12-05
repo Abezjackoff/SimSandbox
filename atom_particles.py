@@ -11,6 +11,8 @@ COULOMB_K = 2.533e38
 
 SIM_SPEED = 8
 
+E_PLOT_N = 100
+
 
 def coulomb_law(x1, x2, y1, y2, q1, q2, m1):
     # acceleration of particle 1
@@ -51,9 +53,23 @@ def simulate_steps(state0, h, steps):
 
     return np.array(simulation)
 
+def E_field(state, q, X, Y):
+    Ex = np.zeros_like(X)
+    Ey = np.zeros_like(Y)
+    for i in range(state.shape[0]):
+        xi = state[i, 0]
+        yi = state[i, 1]
+        r2 = np.square(X - xi) + np.square(Y - yi)
+        Ex += COULOMB_K * q[i] * (X - xi) / (r2 ** 3/2 + EPS)
+        Ey += COULOMB_K * q[i] * (Y - yi) / (r2 ** 3/2 + EPS)
+    return Ex, Ey
+
 def animate_func(i):
-    scatter.set_offsets(simulation[i * SIM_SPEED])
-    return scatter
+    Ex, Ey = E_field(simulation[i * SIM_SPEED], q, X, Y)
+    E_strength = np.log(Ex * Ex + Ey * Ey + EPS)
+    mesh.set_array(E_strength)
+    scatter.set_offsets(simulation[i * SIM_SPEED][:, 0:2])
+    return scatter, mesh
 
 
 if __name__ == '__main__':
@@ -74,7 +90,15 @@ if __name__ == '__main__':
     bound = 200
     offset = -20
 
+    x = np.linspace(-bound + offset, bound + offset, E_PLOT_N)
+    y = np.linspace(-bound, bound, E_PLOT_N)
+    X, Y = np.meshgrid(x, y)
+
     fig = plt.figure()
+    Ex, Ey = E_field(state, q, X, Y)
+    E_strength = np.log(Ex * Ex + Ey * Ey + EPS)
+    mesh = plt.pcolormesh(X, Y, E_strength, cmap = 'inferno')
+
     scatter = plt.scatter(state[:, 0], state[:, 1], s=np.log(m / np.min(m) + 1) * 15,
                           c=q, cmap='seismic', vmin=-2, vmax=2)
     axs = fig.get_axes()
@@ -85,4 +109,8 @@ if __name__ == '__main__':
     simulation = simulate_steps(state, DT, SIM_LEN)
 
     anim = animation.FuncAnimation(fig, animate_func, frames = range(SIM_LEN // SIM_SPEED), interval = 40)
+
+    fig.set_size_inches(6, 6)
+    fig.subplots_adjust(left = 0, bottom = 0, right = 1, top = 1, wspace = None, hspace = None)
+    plt.axis('off')
     plt.show()
