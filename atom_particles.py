@@ -80,11 +80,12 @@ if __name__ == '__main__':
     dist = 52.9
     state[1, 0] = dist * np.cos(1.1)
     state[1, 1] = dist * np.sin(1.1)
-    vi = np.sqrt(np.abs(COULOMB_K * q[0] * q[1]) / (dist * m[1]))
-    state[1, 2] = vi * np.sin(1.1)
-    state[1, 3] = -vi * np.cos(1.1)
+    acc = coulomb_law(state[1, 0], state[0, 0], state[1, 1], state[0, 1], q[1], q[0], m[1])
+    v0 = np.sqrt(np.linalg.norm(acc) * dist)
+    state[1, 2] = v0 * np.sin(1.1)
+    state[1, 3] = -v0 * np.cos(1.1)
     state[2, 0] = -190
-    state[2, 2] = vi * 0.4
+    state[2, 2] = v0 * 0.4
     state[:, 0] -= 20
 
     bound = 200
