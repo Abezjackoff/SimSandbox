@@ -44,7 +44,7 @@ def simulate_steps(state0, h, steps):
 
     y0 = state0.flatten()
     solver = RK45(lambda t,y: get_derivative(np.reshape(y, state0.shape)).flatten(),
-                  0, y0, t_bound = h * (steps + 1), max_step = h)
+                  0, y0, t_bound=h * (steps + 1), max_step=h)
 
     for _ in range(steps):
         solver.step()
@@ -98,7 +98,7 @@ if __name__ == '__main__':
     fig = plt.figure()
     Ex, Ey = E_field(state, q, X, Y)
     E_strength = np.log(Ex * Ex + Ey * Ey + EPS)
-    mesh = plt.pcolormesh(X, Y, E_strength, cmap = 'inferno')
+    mesh = plt.pcolormesh(X, Y, E_strength, cmap='inferno')
 
     scatter = plt.scatter(state[:, 0], state[:, 1], s=np.log(m / np.min(m) + 1) * 15,
                           c=q, cmap='seismic', vmin=-2, vmax=2)
@@ -109,9 +109,9 @@ if __name__ == '__main__':
 
     simulation = simulate_steps(state, DT, SIM_LEN)
 
-    anim = animation.FuncAnimation(fig, animate_func, frames = range(SIM_LEN // SIM_SPEED), interval = 40)
+    anim = animation.FuncAnimation(fig, animate_func, frames=range(SIM_LEN // SIM_SPEED), interval=40)
 
     fig.set_size_inches(6, 6)
-    fig.subplots_adjust(left = 0, bottom = 0, right = 1, top = 1, wspace = None, hspace = None)
+    fig.subplots_adjust(left=0, bottom=0, right=1, top=1, wspace=None, hspace=None)
     plt.axis('off')
     plt.show()
