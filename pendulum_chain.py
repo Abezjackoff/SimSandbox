@@ -11,14 +11,6 @@ from pydy.viz.scene import Scene
 from scipy.integrate import odeint
 from scipy.linalg import inv, solve_continuous_are
 
-def blur_img(img):
-    top = img[:-2, 1:-1]
-    left = img[1:-1, :-2]
-    center = img[1:-1, 1:-1]
-    bottom = img[2:, 1:-1]
-    right = img[1:-1, 2:]
-    return (top + left + center + bottom + right) / 5
-
 if __name__ == '__main__':
 
     # x = np.arange(-np.pi, np.pi, 0.1)
