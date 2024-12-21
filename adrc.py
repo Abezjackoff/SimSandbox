@@ -28,7 +28,7 @@ class PIDController:
 class ADRController:
     Kp = 0.5
 
-    b = 0.15
+    b = 0.12
     w_o = 1.
 
     A = np.matrix('0 1; 0 0')
@@ -49,8 +49,6 @@ class ADRController:
         u = (u - self.z[1].item()) / self.b
         return u
 
-
-
 if __name__ == '__main__':
 
     plant = Plant()
@@ -64,6 +62,7 @@ if __name__ == '__main__':
 
     y = [0.]
     y_step = y[0]
+    pid.reset()
     control = pid.get_control(y_targ, y_step, t_step)
     u = [control]
     for t in time[:-1]:
@@ -96,9 +95,9 @@ if __name__ == '__main__':
         y_step = odeint(plant.get_derivative, y_step, [t, t + t_step],
                         args=(-5 + control,))[-1, :].item()
         y.append(y_step)
+        adrc.predict(control, y_step, t_step)
         if t == 50:
             adrc.eso_reset(y_step)
-        adrc.predict(control, y_step, t_step)
         control = adrc.get_control(y_targ)
         u.append(control)
 
