@@ -154,7 +154,7 @@ if __name__ == '__main__':
 
     F_max = 80.
     act_time = 5.
-    spec_val = lambda x, t: [F_max] if t < act_time/2 else [-F_max] if t < act_time else [0.]
+    spec_ctrl = lambda x, t: [F_max] if t < act_time/2 else [-F_max] if t < act_time else [0.]
 
     x0 = np.zeros(6)
     x0[0] = 2
@@ -171,10 +171,9 @@ if __name__ == '__main__':
     Q = np.diag([5, 20, 20, 1, 10, 10])
     R = 0.01 * np.eye(1)
     K = plant.get_lqr_gains(x_targ, Q, R)
-    def controller(x, t):
-        return np.dot(K, (x_targ - x).T)
+    lqr_ctrl = lambda x, t: np.dot(K, (x_targ - x).T)
 
-    y = odeint(rhs, x0, time, args=(controller, plant.const_dict))
+    y = odeint(rhs, x0, time, args=(lqr_ctrl, plant.const_dict))
 
     pydy_viz(plant, y)
 
