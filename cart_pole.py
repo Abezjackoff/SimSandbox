@@ -124,27 +124,25 @@ class CartPoleMPC(MPController):
         g = self.plant.const_dict[Symbol('g')]
         l1 = self.plant.const_dict[Symbol('l1')]
 
-        x = y[:, 0]
         theta = y[:, 1]
         v = y[:, 2]
         omega = y[:, 3]
-        u = self.u[:, 0]
-        # cos = np.cos(theta)
-        # sin = np.sin(theta)
+        cos = np.cos(theta)
+        sin = np.sin(theta)
 
-        # E_pot = -m1 * g * l1 * np.sum(cos)
-        # E_kin = 0
-        # # E_kin += 0.5 * m * np.sum(v**2)
-        # E_kin += 0.5 * m1 * np.sum((v + l1 * omega * cos)**2)
-        # E_kin += 0.5 * m1 * np.sum((l1 * omega * sin)**2)
-        # J = E_kin - E_pot
+        E_pot = -m1 * g * l1 * np.sum(cos)
+        E_kin = 0
+        E_kin += 0.5 * m * np.sum(v**2)
+        E_kin += 0.5 * m1 * np.sum((v + l1 * omega * cos)**2)
+        E_kin += 0.5 * m1 * np.sum((l1 * omega * sin)**2)
+        J = E_kin - E_pot
 
         # E_pot = m1 * g * l1 * np.sum(0.5 * theta**2 - 1)
         # E_kin = 0.5 * m * np.sum(v**2) + 0.5 * m1 * np.sum((v**2 + 2 * l1 * v * omega + l1**2 * omega**2))
         # J = E_kin + E_pot
 
-        J = 0.5 * (5*np.sum(x**2) + 20*np.sum((theta - np.pi)**2) + 1*np.sum(v**2) + 10*np.sum(omega**2) \
-          + 0.01 * np.sum(u**2) + 0.01 * (self.n_pred - self.n_ctrl - 1) * u[-1]**2)
+        # J = 0.5 * (5*np.sum(y[:, 0]**2) + 20*np.sum((theta - np.pi)**2) + 1*np.sum(v**2) + 10*np.sum(omega**2) \
+        #   + 0.01 * np.sum(self.u[:, 0]**2) + 0.01 * (self.n_pred - self.n_ctrl - 1) * self.u[-1, 0]**2)
         return J
 
     def get_grad(self, y):
@@ -153,28 +151,26 @@ class CartPoleMPC(MPController):
         g = self.plant.const_dict[Symbol('g')]
         l1 = self.plant.const_dict[Symbol('l1')]
 
-        x = y[:, 0]
         theta = y[:, 1]
         v = y[:, 2]
         omega = y[:, 3]
-        u = self.u[:, 0]
-        # cos = np.cos(theta)
-        # sin = np.sin(theta)
+        cos = np.cos(theta)
+        sin = np.sin(theta)
 
-        # dJ_dq = -m1 * l1 * (g + v * omega) * sin
-        # dJ_dv = (0*m + m1) * v + m1 * l1 * omega * cos
-        # dJ_dw = m1 * l1 * (v * cos + l1 * omega)
+        dJ_dq = -m1 * l1 * (g + v * omega) * sin
+        dJ_dv = (m + m1) * v + m1 * l1 * omega * cos
+        dJ_dw = m1 * l1 * (v * cos + l1 * omega)
 
         # dJ_dq = m1 * l1 * g * theta
         # dJ_dv = (m + m1) * v + m1 * l1 * omega
         # dJ_dw = m1 * l1 * v + m1 * l1**2 * omega
 
-        dJ_dx = 5 * x
-        dJ_dq = 20 * (theta - np.pi)
-        dJ_dv = 1 * v
-        dJ_dw = 10 * omega
-        dJ_du = 0.01 * u
-        dJ_du[-1] += 0.01 * (self.n_pred - self.n_ctrl - 1) * u[-1]
+        # dJ_dx = 5 * y[:, 0]
+        # dJ_dq = 20 * (theta - np.pi)
+        # dJ_dv = 1 * v
+        # dJ_dw = 10 * omega
+        # dJ_du = 0.01 * self.u[:, 0]
+        # dJ_du[-1] += 0.01 * (self.n_pred - self.n_ctrl - 1) * self.u[-1, 0]
 
         G = self.get_sensitivity(y, self.u)
         Gx = G[0, 0]
@@ -182,7 +178,9 @@ class CartPoleMPC(MPController):
         Gv = G[2, 0]
         Gw = G[3, 0]
 
-        DJ = dJ_dx @ Gx + dJ_dq @ Gq + dJ_dv @ Gv + dJ_dw @ Gw + dJ_du
+        DJ = dJ_dq @ Gq + dJ_dv @ Gv + dJ_dw @ Gw
+
+        # DJ = dJ_dx @ Gx + dJ_dq @ Gq + dJ_dv @ Gv + dJ_dw @ Gw + dJ_du
         return DJ
 
     def get_hess(self, y):
@@ -191,26 +189,25 @@ class CartPoleMPC(MPController):
         g = self.plant.const_dict[Symbol('g')]
         l1 = self.plant.const_dict[Symbol('l1')]
 
-        x = y[:, 0]
         theta = y[:, 1]
         v = y[:, 2]
         omega = y[:, 3]
-        # cos = np.cos(theta)
-        # sin = np.sin(theta)
+        cos = np.cos(theta)
+        sin = np.sin(theta)
 
-        # ddJ_dqdq = -m1 * l1 * (g + v * omega) * cos
-        # ddJ_dqdv = -m1 * l1 * omega * sin
-        # ddJ_dqdw = -m1 * l1 * v * sin
-        # ddJ_dvdv = (0*m + m1) * np.ones(v.shape)
-        # ddJ_dvdw = m1 * l1 * cos
-        # ddJ_dwdw = m1 * l1**2 * np.ones(omega.shape)
+        ddJ_dqdq = -m1 * l1 * (g + v * omega) * cos
+        ddJ_dqdv = -m1 * l1 * omega * sin
+        ddJ_dqdw = -m1 * l1 * v * sin
+        ddJ_dvdv = (m + m1) * np.ones(v.shape)
+        ddJ_dvdw = m1 * l1 * cos
+        ddJ_dwdw = m1 * l1**2 * np.ones(omega.shape)
 
-        ddJ_dxdx = 5 * np.ones(x.shape)
-        ddJ_dqdq = 20 * np.ones(theta.shape)
-        ddJ_dvdv = 1 * np.ones(v.shape)
-        ddJ_dwdw = 10 * np.ones(omega.shape)
-        ddJ_dudu = 0.01 * np.ones(self.n_ctrl)
-        ddJ_dudu[-1] += 0.01 * (self.n_pred - self.n_ctrl - 1)
+        # ddJ_dxdx = 5 * np.ones(self.n_pred)
+        # ddJ_dqdq = 20 * np.ones(self.n_pred)
+        # ddJ_dvdv = 1 * np.ones(self.n_pred)
+        # ddJ_dwdw = 10 * np.ones(self.n_pred)
+        # ddJ_dudu = 0.01 * np.ones(self.n_ctrl)
+        # ddJ_dudu[-1] += 0.01 * (self.n_pred - self.n_ctrl - 1)
 
         G = self.get_sensitivity(y, self.u)
         Gx = G[0, 0]
@@ -218,12 +215,12 @@ class CartPoleMPC(MPController):
         Gv = G[2, 0]
         Gw = G[3, 0]
 
-        # DDJ = Gq.T @ ((ddJ_dqdq * Gq.T).T + (ddJ_dqdv * Gv.T).T + (ddJ_dqdw * Gw.T).T) \
-        #     + Gv.T @ ((ddJ_dqdv * Gq.T).T + (ddJ_dvdv * Gv.T).T + (ddJ_dvdw * Gw.T).T) \
-        #     + Gw.T @ ((ddJ_dqdw * Gq.T).T + (ddJ_dvdw * Gv.T).T + (ddJ_dwdw * Gw.T).T)
+        DDJ = Gq.T @ ((ddJ_dqdq * Gq.T).T + (ddJ_dqdv * Gv.T).T + (ddJ_dqdw * Gw.T).T) \
+            + Gv.T @ ((ddJ_dqdv * Gq.T).T + (ddJ_dvdv * Gv.T).T + (ddJ_dvdw * Gw.T).T) \
+            + Gw.T @ ((ddJ_dqdw * Gq.T).T + (ddJ_dvdw * Gv.T).T + (ddJ_dwdw * Gw.T).T)
 
-        DDJ = Gx.T @ (ddJ_dxdx * Gx.T).T + Gq.T @ (ddJ_dqdq * Gq.T).T \
-            + Gv.T @ (ddJ_dvdv * Gv.T).T + Gw.T @ (ddJ_dwdw * Gw.T).T + np.diag(ddJ_dudu)
+        # DDJ = Gx.T @ (ddJ_dxdx * Gx.T).T + Gq.T @ (ddJ_dqdq * Gq.T).T \
+        #     + Gv.T @ (ddJ_dvdv * Gv.T).T + Gw.T @ (ddJ_dwdw * Gw.T).T + np.diag(ddJ_dudu)
         return DDJ
 
     def init_u(self):
@@ -258,10 +255,11 @@ class CartPoleMPC(MPController):
         # self.init_u()
         u = self.u.flatten()
 
-        # bounds = optimize.Bounds(-300 * np.ones(self.n_ctrl), 300 * np.ones(self.n_ctrl))
-        # res = optimize.minimize(self.J_and_DJ, u, method='trust-constr', jac=True, hess=self.J_hess, bounds=bounds, options={'verbose': 1})
-        res = optimize.minimize(self.J_and_DJ, u, method='trust-ncg', jac=True, hess=self.J_hess,
-                                options={'disp': True, 'gtol': 1e-3})
+        bounds = optimize.Bounds(-300 * np.ones(self.n_ctrl), 300 * np.ones(self.n_ctrl))
+        res = optimize.minimize(self.J_and_DJ, u, method='trust-constr', jac=True, hess=self.J_hess, bounds=bounds,
+                                options={'verbose': 1, 'gtol': 1e-3})
+        # res = optimize.minimize(self.J_and_DJ, u, method='trust-ncg', jac=True, hess=self.J_hess,
+        #                         options={'disp': True, 'gtol': 1e-3})
         # res = optimize.minimize(self.J_and_DJ, u, method='Newton-CG', jac=True, hess=self.J_hess,
         #                         options={'disp': True, 'gtol': 1e-3})
         # res = optimize.minimize(self.J_and_DJ, u, method='BFGS', jac=True,
