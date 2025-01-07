@@ -10,32 +10,13 @@ from pydy.viz.shapes import Cylinder, Sphere, Box
 from pydy.viz.visualization_frame import VisualizationFrame
 from pydy.viz.scene import Scene
 
+from dyn_sys_plant import PlantMechanicsModel
 
-class PlantMechanicsModel:
-    frames = dict()
-    points = dict()
-    coords = []
-    speeds = []
-    constants = []
-    specified = []
-    kane = None
-    const_dict = dict()
 
-    def add_frame(self, name):
-        if (name not in self.frames) or (not self.frames[name]):
-            F = ReferenceFrame('name')
-            self.frames[name] = F
-            return F
-        else:
-            raise Exception('Overwriting frames is not allowed!')
+class PendCartPlant(PlantMechanicsModel):
 
-    def add_point(self, name: str):
-        if (name not in self.points) or (not self.points[name]):
-            P = Point(name)
-            self.points[name] = P
-            return P
-        else:
-            raise Exception('Overwriting points is not allowed!')
+    def __init__(self):
+        super().__init__()
 
     def build_system_dynamics(self):
 
@@ -43,6 +24,7 @@ class PlantMechanicsModel:
         v, omega1, omega2 = dynamicsymbols('v omega1 omega2')
         self.coords = [x, theta1, theta2]
         self.speeds = [v, omega1, omega2]
+        self.n_x = 6
 
         m, m1, m2 = symbols('m m1 m2')
         g, l1, l2 = symbols('g l1 l2')
@@ -50,6 +32,7 @@ class PlantMechanicsModel:
 
         Fx = dynamicsymbols('Fx')
         self.specified = [Fx]
+        self.n_u = 1
 
         self.add_frame('I')
         self.add_frame('P1')
@@ -92,25 +75,14 @@ class PlantMechanicsModel:
         right_hand_side = generate_ode_function(forcing_vec, self.coords, self.speeds, self.constants,
                                                 mass_matrix=mass_matrix, specifieds=self.specified)
 
+        self.rhs = right_hand_side
         return right_hand_side
 
-    def set_system_parameters(self, const_vals):
-        self.const_dict = dict(zip(self.constants, const_vals))
-
-    def get_lqr_gains(self, equilibrium_point, Q, R):
-        equilibrium_dict = dict(zip(self.coords + self.speeds, equilibrium_point))
-
-        linearizer = self.kane.to_linearizer()
-        linearizer.r = Matrix(self.specified)
-        A, B = linearizer.linearize(op_point=[equilibrium_dict, self.const_dict], A_and_B=True)
-        A = nsimplify(A, tolerance=1e-12, rational=True)
-        A = matrix2numpy(A, dtype='float')
-        B = matrix2numpy(B, dtype='float')
-
-        S = solve_continuous_are(A, B, Q, R)
-        K = np.dot(np.dot(inv(R), B.T), S)
-
-        return K
+    def get_lde_matrices(self, x, u):
+        # A = np.zeros((6, 6))
+        # B = np.zeros((6, 1))
+        # return A, B
+        pass
 
 
 def pydy_viz(plant, y):
@@ -146,7 +118,7 @@ def pydy_viz(plant, y):
 
 if __name__ == '__main__':
 
-    plant = PlantMechanicsModel()
+    plant = PendCartPlant()
     rhs = plant.build_system_dynamics()
     # help(rhs)
 
@@ -183,7 +155,6 @@ if __name__ == '__main__':
     pos2_func = lambdify((plant.coords[0], plant.coords[1], plant.coords[2],
                           plant.constants[3], plant.constants[4]), P2_x, 'numpy')
 
-    l1, l2 = symbols('l1 l2')
     plt.plot(time, y[:, 0])
     plt.plot(time, pos1_func(y[:,0], y[:,1], plant.const_dict[plant.constants[3]]))
     plt.plot(time, pos2_func(y[:, 0], y[:, 1], y[:,2],
