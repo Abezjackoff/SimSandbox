@@ -136,14 +136,17 @@ class MPController:
         pass
 
     def optimize_u(self):
-        self.init_u()
         u = self.u.flatten()
 
         bounds = optimize.Bounds(-300 * np.ones(self.n_ctrl), 300 * np.ones(self.n_ctrl))
-        # res = optimize.minimize(self.J_and_DJ, u, method='trust-constr', jac=True, hess=self.J_hess, bounds=bounds, options={'verbose': 1})
-        res = optimize.minimize(self.J_and_DJ, u, method='Newton-CG', jac=True, hess=self.J_hess,
-                                options={'disp': True})
-        # res = optimize.minimize(self.J_and_DJ, u, method='BFGS', jac=True, options={'disp': True, 'gtol': 1e-3})
+        res = optimize.minimize(self.J_and_DJ, u, method='trust-constr', jac=True, hess=self.J_hess, bounds=bounds,
+                                options={'verbose': 1, 'gtol': 1e-3})
+        # res = optimize.minimize(self.J_and_DJ, u, method='trust-ncg', jac=True, hess=self.J_hess,
+        #                         options={'disp': True, 'gtol': 1e-3})
+        # res = optimize.minimize(self.J_and_DJ, u, method='Newton-CG', jac=True, hess=self.J_hess,
+        #                         options={'disp': True, 'gtol': 1e-3})
+        # res = optimize.minimize(self.J_and_DJ, u, method='BFGS', jac=True,
+        #                         options={'disp': True, 'gtol': 1e-3})
         # res = optimize.minimize(self.J_func, u, method='nelder-mead', callback=self.print_progress,
         #                         options={'disp': True, 'maxiter': 1000})
         u = res.x

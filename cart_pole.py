@@ -252,7 +252,6 @@ class CartPoleMPC(MPController):
         self.u = u.reshape((self.n_ctrl, self.plant.n_u))
 
     def optimize_u(self):
-        # self.init_u()
         u = self.u.flatten()
 
         bounds = optimize.Bounds(-300 * np.ones(self.n_ctrl), 300 * np.ones(self.n_ctrl))
@@ -303,7 +302,7 @@ if __name__ == '__main__':
     # Set IC and simulation time
     x0 = np.zeros(4)
     x0[0] = 2
-    x0[1] = np.pi - np.deg2rad(45)
+    x0[1] = 0
     t_step = 0.05
     act_time = 10.
     time = np.arange(0, 2*act_time + t_step, t_step)
@@ -323,7 +322,8 @@ if __name__ == '__main__':
     lqr_ctrl = lambda x, t: K @ (x_targ - x).T
 
     # MPC control
-    mpc = CartPoleMPC(plant, x0, t_step, act_time, 0.1*act_time, 0.1*act_time)
+    mpc = CartPoleMPC(plant, x0, t_step, act_time, 0.2*act_time, 0.2*act_time)
+    mpc.init_u()
     t, y, u = mpc.run()
 
     # Mixed MPC and LQR control
