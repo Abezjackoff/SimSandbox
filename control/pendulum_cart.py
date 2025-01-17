@@ -1,16 +1,15 @@
 import matplotlib.pyplot as plt
 import numpy as np
 from pydy.codegen.ode_function_generators import generate_ode_function
-from sympy import symbols, simplify, trigsimp, Matrix, matrix2numpy, latex, lambdify, nsimplify
+from sympy import symbols, trigsimp, lambdify
 from sympy.physics.mechanics import Particle, KanesMethod
-from sympy.physics.vector import dynamicsymbols, ReferenceFrame, Point, dot, cross, init_vprinting
+from sympy.physics.vector import dynamicsymbols, Point
 from scipy.integrate import odeint
-from scipy.linalg import inv, solve_continuous_are
 from pydy.viz.shapes import Cylinder, Sphere, Box
 from pydy.viz.visualization_frame import VisualizationFrame
 from pydy.viz.scene import Scene
 
-from dyn_sys_plant import PlantMechanicsModel
+from dynamics.mech_sys_plant import PlantMechanicsModel
 
 
 class PendCartPlant(PlantMechanicsModel):

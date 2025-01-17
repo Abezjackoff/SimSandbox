@@ -1,17 +1,17 @@
 import matplotlib.pyplot as plt
 import numpy as np
+from scipy.integrate import odeint
+from scipy import optimize
 from pydy.codegen.ode_function_generators import generate_ode_function
 from sympy import Symbol, symbols, trigsimp, lambdify
 from sympy.physics.mechanics import Particle, KanesMethod
 from sympy.physics.vector import dynamicsymbols, Point
-from scipy.linalg import solve
-from scipy import optimize
 from pydy.viz.shapes import Cylinder, Sphere, Box
 from pydy.viz.visualization_frame import VisualizationFrame
 from pydy.viz.scene import Scene
 
-from dyn_sys_plant import PlantMechanicsModel
-from mpc import MPController
+from dynamics.mech_sys_plant import PlantMechanicsModel
+from control.mpc import MPController
 
 
 class CartPolePlant(PlantMechanicsModel):
@@ -91,15 +91,12 @@ class CartPolePlant(PlantMechanicsModel):
         A[2, 1] = -m1 * sin2 / dnom**2 * (u[0] + m1*g/l1 * sin2 / 2 + m1*l1 * x[3]**2 * sin) \
                 + 1 / dnom * (m1*g/l1 * cos2 + m1*l1 * x[3]**2 * cos)
         A[2, 3] = 2 * m1 * l1 * x[3] * sin / dnom
-        A[3, 1] = -m1 * sin2 / dnom**2 * (-u[0] * cos - (m + m1)*g/l1 * sin - m1*l1 * x[3]**2 * sin2 / 2) \
-                + 1 / dnom * (u[0] * sin - (m + m1)*g/l1 * cos - m1*l1 * x[3]**2 * cos2)
-        A[3, 3] = -m1 * l1 * x[3] * sin2 / dnom
+        A[3, 1] = -m1 * sin2 / dnom**2 * (-u[0] * cos - (m + m1)*g/l1 * sin - m1*l1 * x[3]**2 * sin2 / 2) / l1 \
+                + 1 / dnom * (u[0] * sin - (m + m1)*g/l1 * cos - m1*l1 * x[3]**2 * cos2) / l1
+        A[3, 3] = -m1 * x[3] * sin2 / dnom
 
         B[2, 0] = 1 / dnom
-        B[3, 0] = -cos / dnom
-
-        A[2, 1] = -m1 * sin2 / dnom**2 * (u[0] + m1*g/l1 * sin2 / 2 + m1*l1 * x[3]**2 * sin) \
-                + 1 / dnom * (m1*g/l1 * cos2 + m1*l1 * x[3]**2 * cos)
+        B[3, 0] = -cos / dnom / l1
 
         # A = np.array([[ 0.,     0.,     1.,     0.   ],
         #               [ 0.,     0.,     0.,     1.   ],
@@ -118,7 +115,7 @@ class CartPoleMPC(MPController):
     def __init__(self, plant, y0, dT, finT, predT, ctrlT):
         super().__init__(plant, y0, dT, finT, predT, ctrlT)
 
-    def get_cost(self, y):
+    def calc_cost(self, y):
         m = self.plant.const_dict[Symbol('m')]
         m1 = self.plant.const_dict[Symbol('m1')]
         g = self.plant.const_dict[Symbol('g')]
@@ -145,7 +142,7 @@ class CartPoleMPC(MPController):
         #   + 0.01 * np.sum(self.u[:, 0]**2) + 0.01 * (self.n_pred - self.n_ctrl - 1) * self.u[-1, 0]**2)
         return J
 
-    def get_grad(self, y):
+    def calc_grad(self, y):
         m = self.plant.const_dict[Symbol('m')]
         m1 = self.plant.const_dict[Symbol('m1')]
         g = self.plant.const_dict[Symbol('g')]
@@ -183,7 +180,7 @@ class CartPoleMPC(MPController):
         # DJ = dJ_dx @ Gx + dJ_dq @ Gq + dJ_dv @ Gv + dJ_dw @ Gw + dJ_du
         return DJ
 
-    def get_hess(self, y):
+    def calc_hess(self, y):
         m = self.plant.const_dict[Symbol('m')]
         m1 = self.plant.const_dict[Symbol('m1')]
         g = self.plant.const_dict[Symbol('g')]
@@ -235,16 +232,19 @@ class CartPoleMPC(MPController):
         #     J, DJ = self.J_and_DJ(u)
         #     print(J)
 
-        for i in range(self.n_ctrl):
-            t = self.time[i]
-            if 0 <= t < 0.15:
-                u[i] = 300
-            elif 1 <= t < 1.15:
-                u[i] = -300
-            else:
-                u[i] = 0
+        if self.has_bounds:
+            bounds = optimize.Bounds(self.u_min, self.u_max)
+            for i in range(self.n_ctrl):
+                t = self.time[i]
+                if 0 <= t < 0.15:
+                    u[i] = self.u_max[0]
+                elif 1.5 <= t < 1.65:
+                    u[i] = self.u_min[0]
+                else:
+                    u[i] = 0
+        else:
+            bounds = None
 
-        # bounds = optimize.Bounds(-300 * np.ones(self.n_ctrl), 300 * np.ones(self.n_ctrl))
         # res = optimize.direct(self.J_func, bounds, locally_biased=False, maxiter=100, callback=self.print_progress)
         # u = res.x
         # print(res.fun)
@@ -254,8 +254,11 @@ class CartPoleMPC(MPController):
     def optimize_u(self):
         u = self.u.flatten()
 
-        bounds = optimize.Bounds(-300 * np.ones(self.n_ctrl), 300 * np.ones(self.n_ctrl))
-        res = optimize.minimize(self.J_and_DJ, u, method='trust-constr', jac=True, hess=self.J_hess, bounds=bounds,
+        if self.has_bounds:
+            bounds = optimize.Bounds(self.u_min, self.u_max)
+        else:
+            bounds = None
+        res = optimize.minimize(self.get_J_and_DJ, u, method='trust-constr', jac=True, hess=self.get_J_hess, bounds=bounds,
                                 options={'verbose': 1, 'gtol': 1e-3})
         # res = optimize.minimize(self.J_and_DJ, u, method='trust-ncg', jac=True, hess=self.J_hess,
         #                         options={'disp': True, 'gtol': 1e-3})
@@ -269,6 +272,48 @@ class CartPoleMPC(MPController):
         print(res.fun)
 
         self.u = u.reshape((self.n_ctrl, self.plant.n_u))
+
+
+class TimeOptimalController:
+    def __init__(self, plant, xT, F_max):
+        self.m = plant.const_dict[Symbol('m')]
+        self.m1 = plant.const_dict[Symbol('m1')]
+        self.l1 = plant.const_dict[Symbol('l1')]
+        self.g = plant.const_dict[Symbol('g')]
+        self.xT = xT
+        self.F_max = F_max
+        self.T1 = 0
+        self.T2 = 0
+        self.T3 = 0
+        self.T4 = 0
+
+    def calc_switch_points(self):
+        k2 = (self.m + self.m1) / self.m * self.g / self.l1
+        a = k2 * self.xT * (self.m + self.m1) / self.F_max
+
+        def func(x, a):
+            return np.cos(np.sqrt(a + 2 * x**2)) - 2 * np.cos(x) + 1
+
+        res = optimize.fsolve(func, np.array([1e-3]), args=(a,))
+
+        tau = res[0] / np.sqrt(k2)
+        self.T2 = np.sqrt(a / k2 + 2 * tau**2)
+        self.T1 = self.T2 - tau
+        self.T3 = self.T2 + tau
+        self.T4 = 2 * self.T2
+
+    def get_ctrl(self, x, t):
+        if 0 <= t < self.T1:
+            u = 1
+        elif self.T1 <= t < self.T2:
+            u = -1
+        elif self.T2 <= t < self.T3:
+            u = 1
+        elif self.T3 <= t < self.T4:
+            u = -1
+        else:
+            u = 0
+        return [u * self.F_max]
 
 
 def pydy_viz(plant, y):
@@ -297,32 +342,37 @@ if __name__ == '__main__':
     plant = CartPolePlant()
     rhs = plant.build_system_dynamics()
     # help(rhs)
-    plant.set_system_parameters(np.array([10, 5, 1, 9.81]))
+    # plant.set_system_parameters(np.array([10, 5, 1, 9.81]))
+    plant.set_system_parameters(np.array([5, 5, 3, 9.81]))
 
     # Set IC and simulation time
     x0 = np.zeros(4)
-    x0[0] = 2
+    x0[0] = 0
     x0[1] = 0
     t_step = 0.05
     act_time = 10.
     time = np.arange(0, 2*act_time + t_step, t_step)
 
     # Specified control
-    F_max = 80.
+    F_max = 50.
     spec_ctrl = lambda x, t: [F_max] if t < act_time/2 else [-F_max] if t < act_time else [0.]
 
-    # LQR control
-    x_targ = np.zeros(4)
-    x_targ[0] = 0
-    x_targ[1] = np.pi
+    # toc = TimeOptimalController(plant, 5., F_max)
+    # toc.calc_switch_points()
 
-    Q = np.diag([5, 20, 1, 10])
-    R = np.diag([0.01])
-    K = plant.get_lqr_gains(x_targ, Q, R)
-    lqr_ctrl = lambda x, t: K @ (x_targ - x).T
+    # LQR control
+    # x_targ = np.zeros(4)
+    # x_targ[0] = 0
+    # x_targ[1] = np.pi
+    #
+    # Q = np.diag([5, 20, 1, 10])
+    # R = np.diag([0.01])
+    # K = plant.get_lqr_gains(x_targ, Q, R)
+    # lqr_ctrl = lambda x, t: K @ (x_targ - x).T
 
     # MPC control
-    mpc = CartPoleMPC(plant, x0, t_step, act_time, 0.2*act_time, 0.2*act_time)
+    mpc = CartPoleMPC(plant, x0, t_step, act_time, 0.5*act_time, 0.5*act_time)
+    mpc.set_u_bounds([-300], [300])
     mpc.init_u()
     t, y, u = mpc.run()
 
@@ -334,12 +384,13 @@ if __name__ == '__main__':
     #         return mpc.get_u_lut(x, t)
 
     # Get control response
-    # y = odeint(rhs, x0, time, args=(mixed_control, plant.const_dict))
+    # y = odeint(rhs, x0, time, args=(spec_ctrl, plant.const_dict))
     # t = time
+    # u = np.array([spec_ctrl(0, ti) for ti in t])
     # print(mpc.get_cost(y))
     # mpc.set_u_lut(mixed_control, y)
 
-    pydy_viz(plant, y)
+    pydy_viz(plant, y[::2])
 
     P_x = plant.points['P'].pos_from(plant.points['O']).dot(plant.frames['I'].x)
     pos1_func = lambdify((plant.coords[0], plant.coords[1], plant.constants[2]), P_x, 'numpy')

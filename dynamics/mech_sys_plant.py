@@ -5,6 +5,39 @@ from sympy.physics.vector import ReferenceFrame, Point
 from scipy.linalg import inv, solve_continuous_are
 
 class PlantMechanicsModel:
+    """Base class for controllable mechanical system.
+
+    Attributes
+    ----------
+    frames : dict[str, ReferenceFrame]
+        Dictionary of reference frames used to define the system dynamics.
+    points : dict[str, Point]
+        Dictionary of points used to define reference points of the system.
+    const_dict : dict[Symbol, float]
+        Dictionary of constant values that are used to evaluate expressions.
+    coords : list[Symbol]
+        List of generalized coordinates.
+    speeds : list[Symbol]
+        List of generalized speeds.
+    constants : list[Symbol]
+        List of constant parameters.
+    specified : list[Symbol]
+        List of specified forces.
+    kane : KanesMethod
+        Kane object from `sympy.physics.mechanics`.
+    rhs : Function
+        Right-hand side function of the system dynamics.
+    n_x : int
+        Number of states equal to `len(self.coords) + len(self.speeds)`.
+    n_u : int
+        Number of inputs equal to `len(self.specified)`.
+
+    Examples
+    --------
+    plant = PlantMechanicsModel() |
+    rhs = plant.build_system_dynamics() |
+    plant.set_system_parameters(params_array) |
+    """
 
     def __init__(self):
         self.frames = dict()
@@ -55,8 +88,25 @@ class PlantMechanicsModel:
 
     @abc.abstractmethod
     def build_system_dynamics(self):
+        """Abstract method to build the system dynamics.
+
+        The method defines mechanical parts of the system and constraints between them.
+        It builds the right-hand side function of the system dynamics and stores it into `self.rhs` attribute.
+        """
         pass
 
     @abc.abstractmethod
     def get_lde_matrices(self, x, u):
+        """Abstract method to get linear differential equation (LDE) matrices A and B.
+
+        A and B describe the linearized system dynamics around an operating point so that dx/dt = Ax + Bu.
+        This method should be implemented by subclasses to define how the matrices are obtained.
+
+        Parameters
+        ----------
+        x : numpy.ndarray
+            Vector of state variables.
+        u : numpy.ndarray
+            Vector of control inputs.
+        """
         pass
