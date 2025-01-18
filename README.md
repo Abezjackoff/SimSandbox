@@ -28,12 +28,12 @@ This folder contains control algorithms and base classes to create, tune and
 execute controllers such as LQR or MPC. Some controllers have interfaces
 to connect with a plant.
 
-### Misc
-This folder contains unsorted or WIP files. 
-
 ### Dynamics
 This folder contains models of dynamic systems that could be simulated in a
 stand-alone mode or within a control loop as a plant.
+
+### Misc
+This folder contains unsorted or WIP files. 
 
 ### Resources
 This folder contains any data or configuration files that might be
