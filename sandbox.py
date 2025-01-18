@@ -1,175 +1,20 @@
-import timeit
 import matplotlib.pyplot as plt
 import numpy as np
 from scipy.linalg import solve
 from scipy.integrate import odeint
 from scipy import optimize
-import cvxpy as cvx
 
-from dynamics.mech_sys_plant import PlantMechanicsModel
+from dynamics.cart_pole_lin import CartPoleLinear
 from control.mpc import MPController
 from control.cart_pole import CartPolePlant
-
-
-def blur_img(img):
-    top = img[:-2, 1:-1]
-    left = img[1:-1, :-2]
-    center = img[1:-1, 1:-1]
-    bottom = img[2:, 1:-1]
-    right = img[1:-1, 2:]
-    return (top + left + center + bottom + right) / 5
-
-def do_blurring(name: str):
-    img = plt.imread(name)
-
-    res = timeit.timeit(lambda: blur_img(img), number=100)
-    print(res / 100)
-
-    blurred = blur_img(img)
-    for _ in range(10):
-        blurred = blur_img(blurred)
-
-    plt.figure()
-    plt.imshow(img)
-
-    plt.figure()
-    plt.imshow(blurred)
-
-    plt.show()
-
-
-def get_motion_solution(u, dT, n):
-    x = np.zeros(n+1)
-    v = np.zeros(n+1)
-    for i in range(1, n+1):
-        v[i] = v[i-1] + u[i-1, 0] * dT
-        x[i] = x[i-1] + (v[i-1] + v[i]) * dT / 2
-    return x, v
-
-
-class PointMassPlant(PlantMechanicsModel):
-    def __init__(self):
-        super().__init__()
-        self.A = np.array([[0, 1], [0, 0]])
-        self.B = np.array([[0], [1]])
-
-    def build_system_dynamics(self):
-        self.n_x = 2
-        self.n_u = 1
-        def ode_rhs(x, t, r, p=None):
-            return self.A @ x + self.B @ r(x, t)
-
-        self.rhs = ode_rhs
-        return ode_rhs
-
-    def get_lde_matrices(self, x, u):
-        return self.A, self.B
-
-
-class LinearCartPole:
-    def __init__(self, m, m1, l1, g):
-        self.const_dict = dict()
-        self.m = m
-        self.m1 = m1
-        self.l1 = l1
-        self.g = g
-        self.n_x = 4
-        self.n_u = 1
-        self.A = np.array([[0, 0, 1, 0],
-                           [0, 0, 0, 1],
-                           [0, self.m1 / self.m * self.g, 0, 0],
-                           [0, -(self.m + self.m1) / self.m / self.l1 * self.g, 0, 0]])
-        self.B = np.array([[0],
-                           [0],
-                           [1 / self.m],
-                           [-1 / self.m / self.l1]])
-
-    def rhs(self, x, t, r, p=None):
-        return self.A @ x + self.B @ r(x, t)
-
-    def get_lde_matrices(self, x, u):
-        return self.A, self.B
-
-
-class PointMassMPC(MPController):
-
-    def __init__(self, a, plant: PlantMechanicsModel, y0, dT, finT, predT, ctrlT):
-        super().__init__(plant, y0, dT, finT, predT, ctrlT)
-        self.a = a
-        self.toc_w = a * self.time
-
-    def calc_cost(self, y):
-        x = y[:, 0]
-        v = y[:, 1]
-
-        # J = 0.5 * np.sum((x-1)**2 + self.a * v**2)
-        # J = np.sum(self.a * np.sqrt((x-1)**2 + v**2))
-        J = np.sum(self.toc_w * np.sqrt((x - 1) ** 2 + v ** 2))
-        return J
-
-    def calc_grad(self, y):
-        x = y[:, 0]
-        v = y[:, 1]
-
-        # dJ_dx = x - 1
-        # dJ_dv = self.a * v
-        J = np.sqrt((x-1)**2 + v**2)
-        dJ_dx = self.toc_w * (x - 1) / J
-        dJ_dv = self.toc_w * v / J
-
-        G = self.get_sensitivity(y, self.u)
-        Gx = G[0, 0]
-        Gv = G[1, 0]
-
-        DJ = dJ_dx @ Gx + dJ_dv @ Gv
-        return DJ
-
-    def calc_hess(self, y):
-        x = y[:, 0]
-        v = y[:, 1]
-
-        # ddJ_dxdx = np.ones(x.shape)
-        # ddJ_dvdv = self.a * np.ones(v.shape)
-        ddJ_dxdx = self.toc_w
-        ddJ_dvdv = self.toc_w
-
-        G = self.get_sensitivity(y, self.u)
-        Gx = G[0, 0]
-        Gv = G[1, 0]
-
-        DDJ = Gx.T @ (ddJ_dxdx * Gx.T).T + Gv.T @ (ddJ_dvdv * Gv.T).T
-        return DDJ
-
-    def init_u(self):
-        u = self.u.flatten()
-        J, DJ = self.get_J_and_DJ(u)
-        print(J)
-        DDJ = self.get_J_hess(u)
-        # print(np.linalg.cond(DDJ))
-        u = solve(DDJ, -DJ)
-        print(self.get_J_and_DJ(u)[0])
-        self.u = u.reshape((self.n_ctrl, self.plant.n_u))
-
-    def optimize_u(self):
-        # self.init_u()
-        u = self.u.flatten()
-
-        if self.has_bounds:
-            bounds = optimize.Bounds(self.u_min, self.u_max)
-        else:
-            bounds = None
-        res = optimize.minimize(self.get_J_and_DJ, u, jac=True, bounds=bounds)
-
-        u = res.x
-        self.u = u.reshape((self.n_ctrl, self.plant.n_u))
+from control.cart_pole_toc import TimeOptimalController
 
 
 class TimeOptimalMPC(MPController):
 
-    def __init__(self, a, plant: PlantMechanicsModel, y0, dT, finT, predT, ctrlT, stride):
+    def __init__(self, plant, y0, dT, finT, predT, ctrlT, stride):
         super().__init__(plant, y0, dT, finT, predT, ctrlT, stride)
-        self.a = a
-        self.toc_w = a * self.time**2
+        self.toc_w = self.time
 
     def calc_cost(self, y):
         x = y[:, 0]
@@ -177,7 +22,7 @@ class TimeOptimalMPC(MPController):
         v = y[:, 2]
         omega = y[:, 3]
 
-        J = np.sum(self.toc_w * np.sqrt((x - 25)**2 + theta**2 + v**2 + omega**2))
+        J = np.sum(self.toc_w * np.sqrt((x - 25)**2 + 5 * theta**2 + v**2 + 5 * omega**2))
         return J
 
     def calc_grad(self, y):
@@ -186,11 +31,11 @@ class TimeOptimalMPC(MPController):
         v = y[:, 2]
         omega = y[:, 3]
 
-        J = np.sqrt((x - 25)**2 + theta**2 + v**2 + omega**2)
+        J = np.sqrt((x - 25)**2 + 5 * theta**2 + v**2 + 5 * omega**2)
         dJ_dx = self.toc_w * (x - 25) / J
-        dJ_dq = self.toc_w * theta / J
+        dJ_dq = self.toc_w * 5 * theta / J
         dJ_dv = self.toc_w * v / J
-        dJ_dw = self.toc_w * omega / J
+        dJ_dw = self.toc_w * 5 * omega / J
 
         G = self.get_sensitivity(y, self.u)
         Gx = G[0, 0]
@@ -207,11 +52,11 @@ class TimeOptimalMPC(MPController):
         v = y[:, 2]
         omega = y[:, 3]
 
-        J = np.sqrt((x - 25) ** 2 + theta ** 2 + v ** 2 + omega ** 2)
+        J = np.sqrt((x - 25) ** 2 + 5 * theta ** 2 + v ** 2 + 5 * omega ** 2)
         ddJ_dxdx = self.toc_w * (1 - (x - 25)**2 / J**2) / J
-        ddJ_dqdq = self.toc_w * (1 - theta**2 / J**2) / J
+        ddJ_dqdq = self.toc_w * 5 * (1 - 5 * theta**2 / J**2) / J
         ddJ_dvdv = self.toc_w * (1 - v**2 / J**2) / J
-        ddJ_dwdw = self.toc_w * (1 - omega**2 / J**2) / J
+        ddJ_dwdw = self.toc_w * 5 * (1 - 5 * omega**2 / J**2) / J
 
         G = self.get_sensitivity(y, self.u)
         Gx = G[0, 0]
@@ -241,140 +86,42 @@ class TimeOptimalMPC(MPController):
             bounds = optimize.Bounds(self.u_min, self.u_max)
         else:
             bounds = None
-        # res = optimize.minimize(self.J_and_DJ, u, method='trust-constr', jac=True, hess=self.J_hess, bounds=bounds,
-        #                         options={'verbose': 1, 'gtol': 1e-3})
-        res = optimize.minimize(self.get_J_and_DJ, u, jac=True, bounds=bounds,
-                                options={'gtol': 1e-3})
+        res = optimize.minimize(self.get_J_and_DJ, u, method='trust-constr', jac=True, hess=self.get_J_hess, bounds=bounds,
+                                options={'verbose': 1, 'gtol': 1e-3})
+        # res = optimize.minimize(self.get_J_and_DJ, u, jac=True, bounds=bounds,
+        #                         options={'gtol': 1e-3})
 
         u = res.x
         self.u = u.reshape((self.n_ctrl, self.plant.n_u))
 
 
-class TimeOptimalController:
-    def __init__(self, plant, xT, F_max):
-        self.m = plant.m
-        self.m1 = plant.m1
-        self.l1 = plant.l1
-        self.g = plant.g
-        self.xT = xT
-        self.F_max = F_max
-        self.T1 = 0
-        self.T2 = 0
-        self.T3 = 0
-        self.T4 = 0
-        self.k2 = 0
-        self.a2 = 0
-
-    def calc_switch_points(self):
-        self.k2 = (self.m + self.m1) / self.m * self.g / self.l1
-        self.a2 = self.k2 * self.xT * (self.m + self.m1) / self.F_max
-
-        tau = self.get_x_root(self.a2) / np.sqrt(self.k2)
-        self.T2 = np.sqrt(self.a2 / self.k2 + 2 * tau**2)
-        self.T1 = self.T2 - tau
-        self.T3 = self.T2 + tau
-        self.T4 = 2 * self.T2
-
-    @staticmethod
-    def get_x_root(a2):
-        def func(x, a2):
-            return np.cos(np.sqrt(a2 + 2 * x**2)) - 2 * np.cos(x) + 1
-
-        res = optimize.fsolve(func, np.array([1e-3]), args=(a2,))
-        return np.abs(res[0])
-
-    def get_Hamiltonian(self, y, u, t):
-        k = np.sqrt(self.k2)
-        phi = k * (self.T2 - self.T1)
-        A = -1
-        C = phi / np.sin(phi)
-        B = A * C
-        c1 = A * (self.m + self.m1) / self.m * k
-        c2 = A * (self.m + self.m1) / self.m * k * self.T2
-        c3 = B * self.l1 * k * np.cos(k * self.T2)
-        c4 = B * self.l1 * k * np.sin(k * self.T2)
-
-        lm1 = c1 * np.ones_like(t)
-        lm2 = c3 * np.cos(k * t) + c4 * np.sin(k * t) + self.m1 * self.g / self.m / k ** 2 * lm1
-        lm3 = -c1 * t + c2
-        lm4 = -c3 / k * np.sin(k * t) + c4 / k * np.cos(k * t) + self.m1 * self.g / self.m / k ** 2 * lm3
-
-        H = 1 + y[:,2] * lm1 + y[:,3] * lm2 + \
-             (self.m1*self.g*y[:, 1] + u[:, 0]) * lm3/self.m - \
-             ((self.m+self.m1)*self.g*y[:, 1] + u[:, 0]) * lm4/self.m/self.l1
-        return H
-
-
-    def get_ctrl(self, x, t):
-        if 0 <= t < self.T1:
-            u = 1
-        elif self.T1 <= t < self.T2:
-            u = -1
-        elif self.T2 <= t < self.T3:
-            u = 1
-        elif self.T3 <= t < self.T4:
-            u = -1
-        else:
-            u = 0
-        return [u * self.F_max]
-
-
 if __name__ == '__main__':
-
-    # do_blurring('resources/starbucks-logo.png')
-
-    dT = 0.5
-    dT2 = dT*dT
-    a = 5
-    # A = np.array([[14*dT2+a, 8*dT2+a, 3*dT2+a, a],
-    #               [8*dT2+a, 5*dT2+a, 2*dT2+a, a],
-    #               [3*dT2+a, 2*dT2+a, dT2+a, a],
-    #               [a, a, a, a]])
-    # B = np.array([[6], [3], [1], [0]])
-    # X = solve(A, B, assume_a='sym')
-    # print(X)
-
-    # Point mass
-    #
-    # n_steps = 80
-    # u = np.zeros(n_steps)
-    # x0 = np.zeros(2)
-    #
-    # plant = PointMassPlant()
-    # plant.build_system_dynamics()
-    # mpc = PointMassMPC(a, plant, x0, dT, n_steps * dT, 0.25 * n_steps * dT, 0.25 * n_steps * dT)
-    # mpc.set_u_bounds([-2e-2, 2e-2])
-    # t, y, u = mpc.run()
-    #
-    # # x, v = get_motion_solution(mpc.u, dT, n_steps)
-    # # y = odeint(plant.rhs, x0, mpc.time, args=(mpc.get_u_lut,))
-    # plt.figure('Response')
-    # plt.plot(t, y[:, 0])
-    # plt.plot(t, y[:, 1])
-    # plt.figure('Control')
-    # plt.plot(t, u[:, 0])
-    # plt.show()
 
     # Time-optimal control of cart-pendulum system
     #
     x0 = np.zeros(4)
     x0[0] = 0
     x0[1] = 0
-    t_step = 0.1
     xT = 25
     F_max = 80.
 
+    t_step = 0.05
     act_time = 5.
     time = np.arange(0, 2*act_time + t_step, t_step)
 
-    plant = LinearCartPole(5, 5, 3, 9.81)
+    plant = CartPoleLinear(5, 5, 3, 9.81)
     nlplant = CartPolePlant()
     nlplant.build_system_dynamics()
     nlplant.set_system_parameters(np.array([5, 5, 3, 9.81]))
 
-    mpc = TimeOptimalMPC(a, nlplant, x0, t_step, 2*act_time, act_time, act_time, 20)
+
+
+    mpc = TimeOptimalMPC(nlplant, x0, t_step, 2*act_time, 0.7*act_time, 0.7*act_time, 5)
     mpc.set_u_bounds([-F_max], [F_max])
     t, y, u = mpc.run()
+    np.save('t_nl', t)
+    np.save('y_nl', y)
+    np.save('u_nl', u)
 
     plt.subplot(1, 2, 1)
     plt.grid()
@@ -391,8 +138,6 @@ if __name__ == '__main__':
     plt.grid()
     plt.plot(t, u)
 
-    #
-    # spec_ctrl = lambda x, t: [F_max] if t < act_time / 2 else [-F_max] if t < act_time else [0.]
     #
     # toc = TimeOptimalController(Plant, xT, F_max)
     # toc.calc_switch_points()
